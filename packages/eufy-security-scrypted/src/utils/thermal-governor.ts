@@ -149,6 +149,21 @@ export class ThermalGovernor {
   start(intervalMs = 10000): void {
     if (this.timer) return;
     this.tick();
+    // One-time startup line so it's verifiable whether the temperature source
+    // is actually readable on this host — the governor is otherwise silent until
+    // a level transition, so "cool + readable" and "unreadable" look identical.
+    if (this.lastTempC === null) {
+      this.logger?.warn(
+        "🌡️ Thermal governor: CPU temperature source unreadable " +
+          "(/sys/class/thermal/thermal_zone0/temp) — transcode throttling is " +
+          "INERT on this host (can't overheat-protect what it can't measure)",
+      );
+    } else {
+      this.logger?.info(
+        `🌡️ Thermal governor active — CPU ${this.lastTempC.toFixed(1)}°C ` +
+          `(warn ≥${this.warnC}°C, throttle transcoding ≥${this.criticalC}°C)`,
+      );
+    }
     this.timer = setInterval(() => this.tick(), intervalMs);
     // Don't keep the event loop alive just for the thermometer.
     this.timer.unref?.();

@@ -106,6 +106,31 @@ describe("ThermalGovernor", () => {
     expect(g.thermalLevel).toBe("critical");
   });
 
+  it("logs a startup line confirming the sensor is readable", () => {
+    const logger = { info: jest.fn(), warn: jest.fn() } as any;
+    temp = 52;
+    const g = new ThermalGovernor({ readTempC: () => temp, logger });
+    g.start();
+    g.stop();
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("Thermal governor active"),
+    );
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("52.0°C"));
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("warns at startup that throttling is inert when the sensor is unreadable", () => {
+    const logger = { info: jest.fn(), warn: jest.fn() } as any;
+    temp = null;
+    const g = new ThermalGovernor({ readTempC: () => temp, logger });
+    g.start();
+    g.stop();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("unreadable"),
+    );
+    expect(logger.info).not.toHaveBeenCalled();
+  });
+
   describe("singleton helpers", () => {
     afterEach(() => _resetThermalGovernor());
 
