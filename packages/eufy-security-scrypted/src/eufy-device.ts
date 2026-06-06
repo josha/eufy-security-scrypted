@@ -302,7 +302,17 @@ export class EufyDevice
 
     // Initialize services
     this.settingsService = new DeviceSettingsService(deviceApi, this.logger);
-    this.stateService = new DeviceStateService(this.logger);
+    this.stateService = new DeviceStateService(
+      this.logger,
+      // Raise a persistent Scrypted UI alert on low battery, in addition to
+      // the console warning the service already logs.
+      (severity, level) =>
+        this.log.a(
+          severity === "critical"
+            ? `🪫 Battery critically low (${level}%) — camera may go offline soon`
+            : `🔋 Battery low (${level}%)`,
+        ),
+    );
     this.refreshService = new RefreshService(deviceApi, this.logger);
     this.videoClipsService = new VideoClipsService(this.wsClient, this.logger);
     this.snapshotService = new SnapshotService(

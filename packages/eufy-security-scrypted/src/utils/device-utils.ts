@@ -30,6 +30,7 @@ import {
   isDoorbell,
 } from "@caplaz/eufy-security-client";
 import { getScryptedDeviceType } from "./scrypted-device-detection";
+import { batteryInterfaces } from "./battery-interfaces";
 
 // Maps Eufy alarm/guard modes to Scrypted security system modes
 export const alarmModeMap: Record<AlarmMode, SecuritySystemMode> = {
@@ -292,13 +293,11 @@ export class DeviceUtils {
       interfaces.push(ScryptedInterface.Intercom);
     }
 
-    // Add Battery interface only for battery-powered devices
-    if (capabilities.battery) {
-      if (properties.battery !== undefined)
-        interfaces.push(ScryptedInterface.Battery);
-      if (properties.chargingStatus !== undefined)
-        interfaces.push(ScryptedInterface.Charger);
-    }
+    // Add Battery/Charger interfaces based on the properties the device
+    // actually reports. Property-driven (rather than gated on the static
+    // capability table) so any battery camera that reports a level surfaces
+    // the Battery tile, even if its type isn't yet in BATTERY_DEVICE_TYPES.
+    interfaces.push(...batteryInterfaces(properties));
 
     if (capabilities.floodlight) {
       if (properties.light !== undefined)

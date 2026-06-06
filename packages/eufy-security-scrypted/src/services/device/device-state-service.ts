@@ -46,11 +46,77 @@ export type StateChangeCallback = (event: StateChangeEvent) => void;
  * - Notifies listeners of state changes
  * - Provides state accessors
  */
+/** Battery percentage at/below which a "low" warning fires. */
+export const BATTERY_LOW_THRESHOLD = 20;
+/** Battery percentage at/below which a "critical" warning fires. */
+export const BATTERY_CRITICAL_THRESHOLD = 5;
+
+export type BatteryWarningSeverity = "low" | "critical";
+
+/**
+ * Decide whether a battery-level change should raise a warning.
+ *
+ * Fires only on a *downward crossing* of a threshold, so a steadily draining
+ * battery warns once per band instead of on every update. An unknown previous
+ * level (e.g. first reading after startup) is treated as "above", so a device
+ * that is already low when first seen warns immediately. Charging back above a
+ * threshold re-arms that band's warning.
+ *
+ * @param previousLevel - Last known battery percentage, or undefined if unknown
+ * @param newLevel - New battery percentage
+ * @returns "critical", "low", or null if no new warning is warranted
+ */
+export function getBatteryWarning(
+  previousLevel: number | undefined,
+  newLevel: number,
+): BatteryWarningSeverity | null {
+  const prev = previousLevel ?? Number.POSITIVE_INFINITY;
+  if (
+    newLevel <= BATTERY_CRITICAL_THRESHOLD &&
+    prev > BATTERY_CRITICAL_THRESHOLD
+  ) {
+    return "critical";
+  }
+  if (newLevel <= BATTERY_LOW_THRESHOLD && prev > BATTERY_LOW_THRESHOLD) {
+    return "low";
+  }
+  return null;
+}
+
 export class DeviceStateService {
   private state: DeviceState = {};
   private stateChangeCallbacks = new Set<StateChangeCallback>();
 
-  constructor(private logger: Logger<ILogObj>) {}
+  /**
+   * @param logger - Logger routed to the device's Scrypted console
+   * @param onBatteryWarning - Optional sink for low-battery warnings (e.g. to
+   *   raise a Scrypted UI alert). The console warning is always logged.
+   */
+  constructor(
+    private logger: Logger<ILogObj>,
+    private onBatteryWarning?: (
+      severity: BatteryWarningSeverity,
+      level: number,
+    ) => void,
+  ) {}
+
+  /**
+   * Emit a low-battery warning (console + optional alert sink) if the level
+   * crossed a threshold downward. Call BEFORE updating stored battery state.
+   */
+  private maybeWarnBattery(
+    previousLevel: number | undefined,
+    newLevel: number,
+  ): void {
+    const severity = getBatteryWarning(previousLevel, newLevel);
+    if (!severity) return;
+    const message =
+      severity === "critical"
+        ? `🪫 Battery critically low (${newLevel}%) — camera may go offline soon`
+        : `🔋 Battery low (${newLevel}%)`;
+    this.logger.warn(message);
+    this.onBatteryWarning?.(severity, newLevel);
+  }
 
   /**
    * Get current device state
@@ -115,6 +181,7 @@ export class DeviceStateService {
     if (properties.battery !== undefined) {
       const newValue = properties.battery;
       if (this.state.batteryLevel !== newValue) {
+        this.maybeWarnBattery(this.state.batteryLevel, newValue);
         this.state.batteryLevel = newValue;
         changes.push({
           interface: ScryptedInterface.Battery,
@@ -180,6 +247,7 @@ export class DeviceStateService {
         break;
 
       case "battery":
+        this.maybeWarnBattery(this.state.batteryLevel, value as number);
         this.state.batteryLevel = value as number;
         change = {
           interface: ScryptedInterface.Battery,

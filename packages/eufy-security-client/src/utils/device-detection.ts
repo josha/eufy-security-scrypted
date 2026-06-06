@@ -179,6 +179,7 @@ export const BATTERY_DEVICE_TYPES = new Set<number>([
   DeviceType.OUTDOOR_PT_CAMERA, // S340 outdoor pan/tilt
   DeviceType.CAMERA_E40, // EufyCam E40
   DeviceType.CAMERA_FG, // T8150 4G Starlight
+  DeviceType.CAMERA_4G_S330, // T86P2 SoloCam 4G S330
   DeviceType.WALL_LIGHT_CAM_81A0, // Wall light cam 81A0
   DeviceType.SMART_DROP, // T8790
 

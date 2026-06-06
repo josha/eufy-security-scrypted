@@ -18,7 +18,10 @@ jest.mock("@scrypted/sdk", () => ({
   },
 }));
 
-import { DeviceStateService } from "../../../src/services/device/device-state-service";
+import {
+  DeviceStateService,
+  getBatteryWarning,
+} from "../../../src/services/device/device-state-service";
 import { Logger, ILogObj } from "tslog";
 import { DeviceProperties, ChargingStatus } from "@caplaz/eufy-security-client";
 import { ScryptedInterface, ChargeState } from "@scrypted/sdk";
@@ -375,5 +378,82 @@ describe("DeviceStateService", () => {
         service.dispose();
       }).not.toThrow();
     });
+  });
+});
+
+describe("getBatteryWarning", () => {
+  it("warns 'low' when crossing below 20%", () => {
+    expect(getBatteryWarning(25, 18)).toBe("low");
+    expect(getBatteryWarning(21, 20)).toBe("low");
+  });
+
+  it("warns 'critical' when crossing below 5%", () => {
+    expect(getBatteryWarning(18, 4)).toBe("critical");
+    expect(getBatteryWarning(6, 5)).toBe("critical");
+  });
+
+  it("treats an unknown previous level as a fresh crossing (initial load)", () => {
+    expect(getBatteryWarning(undefined, 2)).toBe("critical");
+    expect(getBatteryWarning(undefined, 15)).toBe("low");
+    expect(getBatteryWarning(undefined, 80)).toBeNull();
+  });
+
+  it("does not repeat a warning while staying within the same band", () => {
+    expect(getBatteryWarning(18, 15)).toBeNull(); // already low
+    expect(getBatteryWarning(4, 3)).toBeNull(); // already critical
+  });
+
+  it("does not warn when the level is rising", () => {
+    expect(getBatteryWarning(4, 10)).toBeNull();
+    expect(getBatteryWarning(2, 50)).toBeNull();
+  });
+
+  it("re-arms after charging back above a threshold", () => {
+    // charged from 3% up to 30%, then drained below 20% again -> warns again
+    expect(getBatteryWarning(30, 18)).toBe("low");
+  });
+});
+
+describe("DeviceStateService low-battery warning", () => {
+  let logger: jest.Mocked<Logger<ILogObj>>;
+  let onBatteryWarning: jest.Mock;
+  let svc: DeviceStateService;
+
+  beforeEach(() => {
+    logger = {
+      debug: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      fatal: jest.fn(),
+      silly: jest.fn(),
+      trace: jest.fn(),
+    } as any;
+    onBatteryWarning = jest.fn();
+    svc = new DeviceStateService(logger, onBatteryWarning);
+  });
+
+  afterEach(() => svc.dispose());
+
+  it("invokes the callback and logs a warning when battery crosses below the low threshold", () => {
+    svc.updateFromProperties({ battery: 25 } as DeviceProperties);
+    svc.updateProperty("battery", 18);
+
+    expect(onBatteryWarning).toHaveBeenCalledWith("low", 18);
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it("escalates to critical and does not repeat within a band", () => {
+    svc.updateFromProperties({ battery: 25 } as DeviceProperties);
+    svc.updateProperty("battery", 4); // critical
+    svc.updateProperty("battery", 3); // still critical, no new warning
+
+    expect(onBatteryWarning).toHaveBeenCalledTimes(1);
+    expect(onBatteryWarning).toHaveBeenCalledWith("critical", 4);
+  });
+
+  it("warns on initial load when the device is already low", () => {
+    svc.updateFromProperties({ battery: 2 } as DeviceProperties);
+    expect(onBatteryWarning).toHaveBeenCalledWith("critical", 2);
   });
 });
