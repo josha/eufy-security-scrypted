@@ -59,6 +59,20 @@ describe("buildTranscodeArgs", () => {
     expect(joined).toContain("frag_keyframe");
     expect(args[args.length - 1]).toBe("pipe:1");
   });
+
+  it("caps the encode to 1080p (shrink-only) so the Pi can keep up with 4K sources", () => {
+    const args = buildTranscodeArgs(40123);
+    const vfIdx = args.indexOf("-vf");
+    expect(vfIdx).toBeGreaterThan(-1);
+    const filter = args[vfIdx + 1];
+    expect(filter).toContain("scale=1920:1080");
+    // Only ever shrink, never upscale a sub-1080p source.
+    expect(filter).toContain("force_original_aspect_ratio=decrease");
+    // Even dimensions are required for yuv420p.
+    expect(filter).toContain("force_divisible_by=2");
+    // The filter must precede the video codec it applies to.
+    expect(vfIdx).toBeLessThan(args.indexOf("libx264"));
+  });
 });
 
 describe("H264TranscodeServer", () => {

@@ -64,7 +64,18 @@ export interface H264TranscodeServerOptions {
  *   (video-only muxer) don't fail the encode.
  * - fragmented MP4 (`frag_keyframe+empty_moov+default_base_moof`) so the
  *   downstream consumer can start mid-stream, same contract as the muxed port.
+ * - downscale cap (≤1080p): a 4K-capable camera (e.g. SoloCam S330) left on
+ *   "Auto" streaming quality can deliver 3840x2160. A Raspberry Pi cannot
+ *   software-encode 4K in realtime, so without this cap the encoder falls
+ *   behind, no playable frames reach HomeKit, and the live session is killed
+ *   at the ~30s give-up mark (live view never starts). The filter only ever
+ *   shrinks (`force_original_aspect_ratio=decrease`) so ≤1080p sources pass
+ *   through untouched, and keeps even dimensions for yuv420p.
  */
+/** Cap the encoded video to 1080p so the software encoder stays realtime. */
+export const TRANSCODE_MAX_WIDTH = 1920;
+export const TRANSCODE_MAX_HEIGHT = 1080;
+
 export function buildTranscodeArgs(sourcePort: number): string[] {
   return [
     "-hide_banner",
@@ -85,6 +96,10 @@ export function buildTranscodeArgs(sourcePort: number): string[] {
     "0:v:0",
     "-map",
     "0:a:0?",
+    // Downscale anything larger than 1080p (shrink-only) so the Pi's software
+    // encoder can keep up; ≤1080p sources are left untouched.
+    "-vf",
+    `scale=${TRANSCODE_MAX_WIDTH}:${TRANSCODE_MAX_HEIGHT}:force_original_aspect_ratio=decrease:force_divisible_by=2`,
     "-c:v",
     "libx264",
     "-preset",
